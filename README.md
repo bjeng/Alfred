@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Horizons Hackathon Template.
 
 ## Steps 1: Get your project set-up
@@ -20,3 +21,6 @@ You have two ways of working on your project: Local and Gomix.
   `Remix this 🎤`
 1. Select `.env` on the left panel, add your `MONGODB_URI` and `SECRET`
 1. Click `Show` at the top to preview your app!
+=======
+A slack inetegrated bot that uses DialogFlow and Google Calendar to created reminders and meetings for multiple people
+>>>>>>> c619146c3420a63726291a4c75ea47e8a0d670bd
