@@ -8,7 +8,10 @@ mongoose.connect(connect);
 
 var userSchema = new Schema({
   userId: String,
-  token: Object
+  token: Object,
+  title: String,
+  duration: Object,
+  attendees: Array
 });
 
 var User = mongoose.model('User', userSchema);

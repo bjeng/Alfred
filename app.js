@@ -15,37 +15,18 @@ var authenticate = require('./routes/google').authenticate;
 var oauth2Client = require('./routes/google').oauth2Client;
 var listEvents = require('./routes/google').listEvents;
 var makeReminder = require('./routes/google').makeReminder;
+var makeMeeting = require('./routes/google').makeMeeting;
+var makeNewMeeting = require('./routes/google').makeNewMeeting;
 var cookieParser = require('cookie-parser');
 var SCOPES = require('./routes/google').SCOPES;
 
-
-// view engine setup
-var hbs = require('express-handlebars')({
-  defaultLayout: 'main',
-  extname: '.hbs'
-});
-app.engine('hbs', hbs);
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'hbs');
-
-app.use(logger('tiny'));
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ extended: false}));
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.set('port', process.env.PORT || 3000);
 
 // error handlers
-
-// development error handler
-// will print stacktrace
-if (app.get('env') === 'development') {
-  app.use(function(err, req, res, next) {
-    res.status(err.status || 500);
-    res.render('error', {
-      message: err.message,
-      error: err
-    });
-  });
-}
 
 require('./routes/bot');
 
@@ -67,10 +48,7 @@ mongoose.connection.on('error', function(err) {
   process.exit(1);
 });
 
-app.set('port', process.env.PORT || 3000);
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(cookieParser());
+
 
 var id = '';
 app.get('/setup', function(req, res) {
@@ -85,8 +63,31 @@ app.get('/setup', function(req, res) {
 app.get('/oauth2callback', function(req, res) {
   var code = req.query.code;
   authenticate(code, oauth2Client, id);
+  res.send('User has been authenticated!')
 });
 
+app.post('/slack/interactive', function(req, res) {
+  var payload = JSON.parse(req.body.payload);
+  console.log("HERE IS THE PAYLOAD", payload);
+  User.findOne({userId: payload.user.id}, function(err, user) {
+    if(err) {
+      console.log('Error finding user to make proposed event')
+    } else {
+        var title = user.title;
+        var startTime = new Date(payload.actions[0].value);
+        var token = user.token;
+        var duration = user.duration;
+        var attendees = user.attendees;
+        return makeNewMeeting(title, startTime, token, duration, attendees)
+          .then(function() {
+            res.send('Created meeting!');
+          })
+          .catch(function(err) {
+            res.send('Error creating meeting with proposed times!', err);
+          })
+        }
+      })
+    })
 
 app.use(function(err, req, res, next) {
   res.status(err.status || 500);
