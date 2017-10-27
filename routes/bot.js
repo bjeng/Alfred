@@ -7,72 +7,168 @@ var token = process.env.BOT_TOKEN || '';
 var User = require('../models');
 var userToken = process.env.BOT_TOKEN;
 var slack = require('slack');
+var dateJs = require('datejs');
 
 var rtm = new RtmClient(token);
 var web = new WebClient(token);
 rtm.start();
 
+function getInteractiveMessage(message, proposed) {
+  return {
+    "text": message,
+    // "fields": [
+    //   {
+    //     "title": ,
+    //     "value": ,
+    //     "short": true
+    //   }
+    // ]
+    "attachments": [
+      {
+        "fallback": "you are unable to create a reminder",
+        "callback_id": "reminder",
+        "attachment_type": "default",
+        "actions": [
+          {
+            "name": "1",
+            "text": "1",
+            "type": "button",
+            "style": "primary",
+            "value": proposed[0].startTime
+          },
+          {
+            "name": "confirm2",
+            "text": "2",
+            "type": "button",
+            "style": "primary",
+            "value": proposed[1].startTime
+          },
+          {
+            "name": "confirm3",
+            "text": "3",
+            "type": "button",
+            "style": "primary",
+            "value": proposed[2].startTime
+          },
+          {
+            "name": "confirm4",
+            "text": "4",
+            "type": "button",
+            "style": "primary",
+            "value": proposed[3].startTime
+          },
+          {
+            "name": "5",
+            "text": "5",
+            "type": "button",
+            "style": "primary",
+            "value": proposed[4].startTime
+          },
+        ]
+      }
+    ]
+  };
+}
+
 function handleDialogflowConvo(message) {
   dialogflow.interpretUserMessage(message.text, message.user)
   .then(function(res) {
     var { data } = res;
-    // console.log('OBJECT', data.result.parameters.invitees);
-    if (data.result.metadata.intentName === 'meeting.add'){
-        // web.chat.postMessage(message.channel, data.result.fulfillment.speech);
-        if (data.result.parameters.emails.length > 0){
-            slack.users.list({token: userToken})
+    var title = data.result.parameters['meeting-name']
+    var dateTime = new Date(data.result.parameters.dateTime)
+    var duration = data.result.parameters.duration
+    var token = {};
+    var attendees = [];
+    if (data.result.metadata.intentName === 'meeting.add') {
+      if (data.result.actionIncomplete) {
+        web.chat.postMessage(message.channel, data.result.fulfillment.speech);
+      } else {
+          slack.users.list({token: userToken})
             .then(resp => {
-            // var id = '';
-            // var text = 'text to send when user found';
-            // for (var i = 0; i < resp.members.length; i++){
-            //     if (resp.members[i].indexOf(data.result.parameters.invitees) > -1){
-            //         id = resp.members[i].id
-            //     }
-            // }
-            // slack.chat.postMessage({token: userToken,  channel: id, text:text})
             var emails = data.result.parameters.emails.filter(function(item, pos) {
-              return data.result.parameters.emails.indexOf(item) == pos;
-            });
-            console.log(emails);
-            User.findOne({userId: message.user}, function(err,user) {
-              if(err) {
-                console.log('Error finding user in MONGO', err)
+              return data.result.parameters.emails.indexOf(item) == pos})
+              attendees = emails
+            })
+            .then(emails => {
+              return User.findOne({userId: message.user}, function(err,user) {
+                if(err) {
+                  console.log('Error finding user in MONGO', err)
+                } else {
+                  token = user.token;
+                  return user;
+                }
+              })
+            })
+            .then(user => {
+              return User.findOneAndUpdate({userId: user.userId}, {title: title, duration: duration, attendees: attendees}, function(err) {
+                if(err) {
+                  console.log('There was an error updating user with meeting information', err);
+                  throw Error;
+                } else {
+                  console.log('Updated user with meeting information!')
+                }
+              })
+            })
+            .then(() => {
+              return google.conflictCheck(dateTime, token, duration);
+            })
+            .then(events => {
+              if(events === 'No Conflict') {
+                return google.makeNewMeeting(title, dateTime, token, duration, attendees);
+                web.chat.postMessage(message.channel, data.result.fulfillment.speech);
               } else {
-                var title = data.result.parameters['meeting-name']
-                var dateTime = new Date(data.result.parameters.dateTime)
-                console.log(dateTime)
-                var token = user.token
-                var duration = data.result.parameters.duration
-                // google.makeMeeting(token, title, dateTime, duration, emails);
-                google.makeMeeting(token, title, dateTime, duration, emails)
+                return google.proposeTimes(events, dateTime, token, duration)
               }
             })
-            // console.log(data.result.parameters.emails);
-            // console.log(resp.members[i].profile.email)
-        }).catch(e => console.log(e))
+            .then(proposed => {
+              if(proposed[0].startTime) {
+                var list = proposed.map((slot, index) => {
+                  var start = slot.startTime.toString();
+                  var end = slot.endTime.toString();
+                  var str = `${index + 1} - ${start} to ${end} \n`
+                  return str;
+                  // return str.link(`http://localhost:3000/makemeeting?title=${title}&dateTime=${start}&token=${token}&duration=${duration}&attendees=${attendees}`)
+                })
+                web.chat.postMessage(message.channel, `Sir, it seems the slot you have requested is taken. Please choose from the following options:
+${list.join('')}`, getInteractiveMessage(list, proposed));
+              }
+            })
+          .catch(e =>
+            console.log('Error handling meeting message', e))
         }
-    } else {
-      if (data.result.metadata.intentName === 'reminder.add'){
+    } else if (data.result.metadata.intentName === 'reminder.add') {
         if (data.result.actionIncomplete) {
-          // console.log(data.result.fulfillment.speech)
           web.chat.postMessage(message.channel, data.result.fulfillment.speech);
         } else {
-          web.chat.postMessage(message.channel,
-            `You asked me to remind you to ${data.result.parameters['reminder-name'][0]} on ${data.result.parameters.date}`);
-            User.findOne({userId: message.user}, function(err,user) {
-              if(err) {
-                console.log('Error finding user in MONGO', err)
+            var title = data.result.parameters['reminder-name']
+            var date = data.result.parameters.date
+            var token = user.token
+            if (data.result.parameters.confirm === "Confirm") {
+              google.makeReminder(token, title, date)
+              web.chat.postMessage(message.channel, data.result.fulfillment.speech);
+            }
+          }
+      } else if (data.result.metadata.intentName === 'signup')  {
+        if(data.result.actionIncomplete) {
+          web.chat.postMessage(message.channel, data.result.fulfillment.speech);
+        } else {
+          User.findOne({userId: message.user}, function(err,user) {
+            if(err) {
+              console.log('Error finding user in MONGO', err)
+            } else {
+              if(user.token) {
+                web.chat.postMessage(message.channel, `My apologies sir. It seems like you are already signed in on google Calendar, but if you need to re-validate your credentials please see link http://localhost:3000/setup?slackId=${message.user}.`)
               } else {
-                var title = data.result.parameters['reminder-name'][0]
-                var date = data.result.parameters.date
-                var token = user.token
-                google.makeReminder(token, title, date)
+                web.chat.postMessage(message.channel, `Much appreciated sir. Please see the link below to connect. Let me know if there's anything I can do for you.
+                http://localhost:3000/setup?slackId=${message.user}`)
               }
-            })
+            }
+          });
         }
+      } else {
+          web.chat.postMessage(message.channel, `Let me know if there's anything I can do for you sir.`)
       }
-    }
-  })
+    })
   .catch(function(err) {
     console.log('Error sending message to Dialogflow', err);
   });
@@ -83,8 +179,8 @@ rtm.on(RTM_EVENTS.MESSAGE, function handleRtmMessage(message) {
     console.log('Message send by a bot, ignoring');
     return;
   } else {
-    User.findOne({userId: message.user}, function(err, user){
-      if (!user){
+    User.findOne({userId: message.user}, function(err, user) {
+      if (!user) {
         console.log('DID NOT FIND PERSON IN MONGO', err);
         var newUser = new User ({
           userId: message.user,
@@ -97,8 +193,6 @@ rtm.on(RTM_EVENTS.MESSAGE, function handleRtmMessage(message) {
             console.log('User was saved');
           }
         })
-        web.chat.postMessage(message.channel, `Do you want to connect to google calendar?
-        http://localhost:3000/setup?slackId=${message.user}`)
       }
     })
     handleDialogflowConvo(message);
