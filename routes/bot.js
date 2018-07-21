@@ -74,6 +74,7 @@ function handleDialogflowConvo(message) {
   dialogflow.interpretUserMessage(message.text, message.user)
   .then(function(res) {
     var { data } = res;
+
     var title = data.result.parameters['meeting-name']
     var dateTime = new Date(data.result.parameters.dateTime)
     var duration = data.result.parameters.duration
