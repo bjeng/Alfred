@@ -7,6 +7,7 @@ var token = process.env.BOT_TOKEN || '';
 var User = require('../models');
 var userToken = process.env.BOT_TOKEN;
 var slack = require('slack');
+var dateJs = require('datejs');
 
 var rtm = new RtmClient(token);
 var web = new WebClient(token);
@@ -18,8 +19,10 @@ function handleDialogflowConvo(message) {
     var { data } = res;
     // console.log('OBJECT', data.result.parameters.invitees);
     if (data.result.metadata.intentName === 'meeting.add'){
-        // web.chat.postMessage(message.channel, data.result.fulfillment.speech);
-        if (data.result.parameters.emails.length > 0){
+        web.chat.postMessage(message.channel, data.result.fulfillment.speech);
+        if (data.result.parameters.emails.length > 0 && data.result.parameters.confirm){
+            console.log(data.messages);
+            console.log(data.result.parameters.confirm);
             slack.users.list({token: userToken})
             .then(resp => {
             // var id = '';
@@ -44,7 +47,27 @@ function handleDialogflowConvo(message) {
                 var token = user.token
                 var duration = data.result.parameters.duration
                 // google.makeMeeting(token, title, dateTime, duration, emails);
-                google.makeMeeting(token, title, dateTime, duration, emails)
+                if (data.result.parameters.confirm === 'Confirm') {
+                  google.makeMeeting(token, title, dateTime, duration, emails).then((r) => {
+                    if (typeof(r) === 'object') {
+                      let dataArray = r;
+                      let returnedArray = [];
+                      console.log('Data ARRRAY', dataArray);
+                      dataArray.map((element) => {
+                        let startDate = element.startTime.toString();
+                        let endDate = element.endTime.toString();
+                        let fullDate = 'Start Time: ' + startDate + ' to ' + 'End Time: ' + endDate;
+                        console.log(fullDate);
+                        web.chat.postMessage(message.channel, fullDate);
+                      });
+                    } else {
+                      google.makeMeeting(token, title, dateTime, duration, emails);
+                    }
+                  });
+                    // if (typeof(google.makeMeeting(token, title, dateTime, duration, emails)) === 'array') {
+                    //   let dataArray = google.makeMeeting(token, title, dateTime, duration, emails);
+                    // }
+                }
               }
             })
             // console.log(data.result.parameters.emails);
@@ -58,7 +81,7 @@ function handleDialogflowConvo(message) {
           web.chat.postMessage(message.channel, data.result.fulfillment.speech);
         } else {
           web.chat.postMessage(message.channel,
-            `You asked me to remind you to ${data.result.parameters['reminder-name'][0]} on ${data.result.parameters.date}`);
+            `You asked me to remind you to ${data.result.parameters['reminder-name']} on ${data.result.parameters.date}`);
             User.findOne({userId: message.user}, function(err,user) {
               if(err) {
                 console.log('Error finding user in MONGO', err)
@@ -66,7 +89,9 @@ function handleDialogflowConvo(message) {
                 var title = data.result.parameters['reminder-name'][0]
                 var date = data.result.parameters.date
                 var token = user.token
-                google.makeReminder(token, title, date)
+                if (data.result.parameters.confirm === "Confirm") {
+                  google.makeReminder(token, title, date)
+                }
               }
             })
         }
