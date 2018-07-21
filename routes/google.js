@@ -8,17 +8,12 @@ var User = require('../models');
 //MAKE SURE TO REQURE THE BOT HERE
 
 var SCOPES = 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/calendar';
-var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
-  process.env.USERPROFILE) + '/.credentials/';
-  var TOKEN_PATH = TOKEN_DIR + 'calendar-nodejs-quickstart.json';
-  var OAuth2Client = google.OAuth2Client;
-  var client_id = process.env.client_id;
-  var client_secret = process.env.client_secret;
-  var redirect_uri = process.env.redirect_uri;
-  var auth = new googleAuth();
-  var oauth2Client = new auth.OAuth2(client_id, client_secret, redirect_uri);
-
-  var allTimes = [];
+var OAuth2Client = google.OAuth2Client;
+var client_id = process.env.client_id;
+var client_secret = process.env.client_secret;
+var redirect_uri = process.env.redirect_uri;
+var auth = new googleAuth();
+var oauth2Client = new auth.OAuth2(client_id, client_secret, redirect_uri);
 
   //AUTHENTICATE
   function authenticate(code, oauth2Client, id) {
@@ -36,11 +31,6 @@ var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
         }
       });
       oauth2Client.credentials = token;
-      var newToken = oauth2Client;
-      var title = 'Eating';
-      var startDate = new Date();
-      var duration = {unit: 'hour', amount: 2};
-      var attendees = ['hsaab310@gmail.com', 'bjeng3@gmail.com'];
     });
   }
 
@@ -79,46 +69,61 @@ var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
   }
 
   //MEETINGS
-  function proposeTimes(events, startDate, endDate, duration) {
+  function proposeTimes(events, startDate, token, duration) {
     var availableTimes = [];
     var unit = duration.unit;
-    for(let i = 0; i < events.length - 1; i++) {
-      if(availableTimes.length === 5) {
-        break;
-      }
-      var event1End = new Date(events[i].end.dateTime);
-      var event2Start = new Date(events[i + 1].start.dateTime);
-      var timeAvailable = 0;
-      if(unit === 'min') {
-        timeAvailable = (event2Start - event1End)/1000/60/60;
-      } else {
-        timeAvailable = (event2Start - event1End)/1000/60;
-      }
-      if(timeAvailable >= duration.amount) {
-        var slots = Math.round(timeAvailable / duration.amount);
-        var amount = duration.amount;
-        for(let z = 0; z < slots; z++) {
-          if(availableTimes.length === 5) {
-            break;
-          }
-          if(unit === 'min') {
-            var slot = {startTime: new Date(event1End).add(z*amount).minutes().toString(), endTime: new Date(event1End).add((z+1)*amount).minutes().toString()}
-            availableTimes.push(slot);
-          } else {
-            var slot = {startTime: new Date(event1End).add(z*amount).hours().toString(), endTime: new Date(event1End).add((z+1)*amount).hours().toString()}
-            availableTimes.push(slot);
-          }
-        }
-        console.log(availableTimes);
-        allTimes = availableTimes;
-        return availableTimes;
-      }
+    var endDate = '';
+    if (duration.unit === 'min') {
+      endDate = new Date(startDate).add(duration.amount).minutes();
     }
-    console.log(availableTimes);
-    return availableTimes;
+    else {
+      endDate = new Date(startDate).add(duration.amount).hours();
+    }
+      for(let i = 0; i < events.length - 1; i++) {
+        if(availableTimes.length === 5) {
+          break;
+        }
+        var event1End = new Date(events[i].end.dateTime);
+        var event2Start = new Date(events[i + 1].start.dateTime);
+        var timeAvailable = 0;
+        if(unit === 'min') {
+          timeAvailable = (event2Start - event1End)/1000/60/60;
+        } else {
+          timeAvailable = (event2Start - event1End)/1000/60;
+        }
+        if(timeAvailable >= duration.amount) {
+          var slots = Math.round(timeAvailable / duration.amount);
+          var amount = duration.amount;
+          for(let z = 0; z < slots; z++) {
+            if(availableTimes.length === 5) {
+              break;
+            }
+            if(unit === 'min') {
+              var slot = {startTime: new Date(event1End).add(z*amount).minutes().toString(), endTime: new Date(event1End).add((z+1)*amount).minutes().toString()}
+              availableTimes.push(slot);
+            } else {
+              var slot = {startTime: new Date(event1End).add(z*amount).hours().toString(), endTime: new Date(event1End).add((z+1)*amount).hours().toString()}
+              availableTimes.push(slot);
+            }
+          }
+          console.log(availableTimes);
+          return availableTimes;
+        }
+      }
+      console.log(availableTimes);
+      return availableTimes;
   }
 
-  function makeNewMeeting(title, startDate, endDate, newToken, attendees) {
+  function makeNewMeeting(title, startDate, token, duration, attendees) {
+    var newToken = new auth.OAuth2(client_id, client_secret, redirect_uri);
+    newToken.credentials = token;
+    var endDate = '';
+    if (duration.unit === 'min') {
+      endDate = new Date(startDate).add(duration.amount).minutes();
+    }
+    else {
+      endDate = new Date(startDate).add(duration.amount).hours();
+    }
     return new Promise(function(resolve,reject) {
       function makeEmails(attendees) {
         return attendees.map(email => {
@@ -159,7 +164,7 @@ var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
           console.log('Error making a meeting',err)
         } else {
           console.log('Success making meeting!')
-          // console.log(res);
+          console.log('New meeting created', res);
         }
       });
     })
@@ -175,85 +180,16 @@ var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
       var e1EndCompare = Date.compare(new Date(events[i].end.dateTime), new Date(endDate));
       var e2StartCompare = Date.compare(new Date(events[i + 1].start.dateTime), new Date(startDate));
       var e2EndCompare = Date.compare(new Date(events[i + 1].start.dateTime), new Date(endDate));
-      // console.log(e1StartCompare, e1EndCompare, e2StartCompare, e2EndCompare)
-      if((e1StartCompare === 1 && e1EndCompare === -1 || 0) || (e2StartCompare === 1 || 0 && e2EndCompare === -1)) {
+      if((e1StartCompare === 1 && (e1EndCompare === -1 || e1EndCompare ===0)) || ((e2StartCompare === 1 || e2StartCompare === 0) && e2EndCompare === -1)) {
         conflict = 'Conflict';
         break;
       }
     }
+    console.log('There are conflicts ', conflict);
     return conflict;
   }
 
-  function listEvents(newToken, startDate, endDate, duration, attendees, title) {
-    console.log('Three')
-    return new Promise(function(resolve, reject) {
-      return calendar.events.list({
-        auth: newToken,
-        calendarId: 'primary',
-        timeMin: (new Date(startDate)).toISOString(),
-        maxResults: 10,
-        singleEvents: true,
-        orderBy: 'startTime'
-      }, function(err,res) {
-        if(err) {
-          reject(err)
-        } else {
-          resolve(res)
-        }
-      })
-    })
-    .then(function(response) {
-      console.log('Four')
-      var events = response.items;
-      return events
-    })
-    .then(function(events) {
-      console.log('Five')
-
-      if (compareDates(startDate, endDate, duration, events) === 'Conflict') {
-        //  console.log('Upcoming 10 events:');
-        for (var i = 0; i < events.length; i++) {
-          var event = events[i];
-          var start = event.start.dateTime || event.start.date;
-          //  console.log('%s - %s', start, event.summary);
-        }
-        return proposeTimes(events, startDate, endDate, duration);
-      } else {
-        console.log('No upcoming events found.');
-        return makeNewMeeting(title, startDate, endDate, newToken, attendees);
-      }
-
-      // return new Promise(function(resolve, reject) {
-      //   console.log('Six')
-      //   if(compareDates(startDate, endDate, duration, events)) {
-      //     resolve(compareDates(startDate, endDate, duration, events))
-      //   } else {
-      //     reject()
-      //   }
-      // })
-      // .then(function(conflict) {
-      //   //  console.log('THIS IS THE CONFLICT', conflict)
-      //   if (conflict === 'Conflict') {
-      //     //  console.log('Upcoming 10 events:');
-      //     for (var i = 0; i < events.length; i++) {
-      //       var event = events[i];
-      //       var start = event.start.dateTime || event.start.date;
-      //       //  console.log('%s - %s', start, event.summary);
-      //     }
-      //     proposeTimes(events, startDate, endDate, duration);
-      //   } else {
-      //     console.log('No upcoming events found.');
-      //     makeNewMeeting(title, startDate, endDate, newToken, attendees);
-      //   }
-      // })
-    })
-    .catch(function(err) {
-      console.log('Error in the listEvents function', err);
-    })
-  }
-
-  function makeMeeting(token, title, startDate, duration, attendees) {
-    console.log('One')
+  function conflictCheck(startDate, token, duration) {
     var newToken = new auth.OAuth2(client_id, client_secret, redirect_uri);
     newToken.credentials = token;
     var endDate = '';
@@ -263,11 +199,39 @@ var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
     else {
       endDate = new Date(startDate).add(duration.amount).hours();
     }
-    console.log('Two')
-    return listEvents(newToken, startDate, endDate, duration, attendees, title)
-    // .then((resp) => {
-    //   allTimes = resp;
-    // });
+      return new Promise(function(resolve, reject) {
+        return calendar.events.list({
+          auth: newToken,
+          calendarId: 'primary',
+          timeMin: new Date(startDate).toISOString(),
+          maxResults: 10,
+          singleEvents: true,
+          orderBy: 'startTime'
+        }, function(err,res) {
+          if(err) {
+            reject(err)
+          } else {
+            resolve(res)
+          }
+        })
+      })
+      .then(function(response) {
+        console.log('Four')
+        var events = response.items;
+        return events;
+      })
+      .then(function(events) {
+        console.log('Five')
+        if (compareDates(startDate, endDate, duration, events) === 'Conflict') {
+          return events;
+        } else {
+          console.log('No upcoming events found.');
+          return 'No Conflict';
+        }
+      })
+      .catch(function(err) {
+        console.log('Error in the conflicts check function', err);
+      })
   }
 
-  module.exports = {authenticate, oauth2Client, SCOPES, listEvents, makeReminder, makeMeeting, makeNewMeeting, allTimes}
+  module.exports = {authenticate, oauth2Client, SCOPES, makeReminder, makeNewMeeting, compareDates, proposeTimes, conflictCheck}
